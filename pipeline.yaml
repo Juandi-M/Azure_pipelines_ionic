@@ -1,0 +1,237 @@
+# Xcode
+
+# MacOS
+
+# Cordova
+
+# Azure App Center
+
+ 
+
+# CI Triggerin and Batching pipeline
+
+trigger:
+
+  batch: true
+
+  branches:
+
+    include:
+
+    - master
+
+pr: none
+
+name: $(customBuildNumber)
+
+pool:
+
+  vmImage: 'macos-latest'
+
+ 
+
+# Variables
+
+variables:
+
+- group: Map.Pings_SharedVariables
+
+- group: Profiles_Certs_iOS
+
+- name: MajorVersion
+
+  value: 1
+
+- name: MinorVersion
+
+  value: 0
+
+- name: customBuildNumber
+
+  value: '$(MajorVersion).$(MinorVersion).$(date:yy)$(DayOfYear)$(rev:.r)'
+
+- name: configuration
+
+  value: 'Release'
+
+- name: sdk
+
+  value: 'iphoneos'
+
+ 
+
+# Jobs
+
+steps:
+
+ 
+
+# Prepare Agent with Ionic and cordova commands
+
+- task: Npm@1
+
+  inputs:
+
+    command: 'custom'
+
+    customCommand: 'install -g ionic'
+
+ 
+
+- task: Npm@1
+
+  inputs:
+
+    command: 'custom'
+
+    customCommand: 'install -g grunt-cli'
+
+ 
+
+- task: Npm@1
+
+  inputs:
+
+    command: 'custom'
+
+    customCommand: 'install -g cordova'
+
+ 
+
+- task: Npm@1
+
+  inputs:
+
+    command: 'custom'
+
+    customCommand: 'install -g cordova-res'
+
+ 
+
+# Run the ionic cordova commands to prepare the solution
+
+- task: CmdLine@2
+
+  inputs:
+
+    script: |
+
+      ionic cordova platforms add ios
+
+     
+
+      ionic cordova resources ios --force
+
+     
+
+      ionic cordova prepare ios
+
+ 
+
+# XCODE PREPARATION AND BUILD
+
+ 
+
+## Xcode install Cert p.12
+
+- task: InstallAppleCertificate@2
+
+  inputs:
+
+    certSecureFile: '$(3M_internal_cert)'
+
+    certPwd: '$(3M_cert_password)'
+
+    keychain: 'temp'
+
+    deleteCert: true
+
+ 
+
+- task: InstallAppleProvisioningProfile@1
+
+  inputs:
+
+    provisioningProfileLocation: 'secureFiles'
+
+    provProfileSecureFile: '$(profile_map_pings)'
+
+ 
+
+## . Xcode Build
+
+- task: Xcode@5
+
+  inputs:
+
+    actions: 'build'
+
+    configuration: 'Release'
+
+    sdk: 'iphoneos'
+
+    xcWorkspacePath: '**/Map.pings.xcworkspace'
+
+    scheme: 'Map.pings'
+
+    xcodeVersion: '11'
+
+    packageApp: true
+
+    archivePath: 'tmp/MapPings/'
+
+    exportPath: 'tmp/MapPings/output'
+
+    signingOption: 'manual'
+
+    signingIdentity: '$(APPLE_CERTIFICATE_SIGNING_IDENTITY)'
+
+   provisioningProfileUuid: '$(APPLE_PROV_PROFILE_UUID)'
+
+    provisioningProfileName: '3M Map Pings'
+
+ 
+
+# Export ipa
+
+- task: CopyFiles@2
+
+  inputs:
+
+    contents: '**/*.ipa'
+
+    targetFolder: '$(build.artifactStagingDirectory)'
+
+    overWrite: true
+
+ 
+
+# Publish ipa
+
+- task: PublishBuildArtifacts@1
+
+  inputs:
+
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+
+    ArtifactName: '$(Build.BuildId)'
+
+    publishLocation: 'Container'
+
+ 
+
+# Distribute to AppCenter
+
+- task: AppCenterDistribute@3
+
+  inputs:
+
+    serverEndpoint: '3M_AppCenter_MapPings_Prod'
+
+    appSlug: '$(app_slug_prod)'
+
+    appFile: '$(Build.ArtifactStagingDirectory)/**/*.ipa'
+
+    buildVersion: '$(Build.BuildNumber)'
+
+    releaseNotesOption: 'input'
